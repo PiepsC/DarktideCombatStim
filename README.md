@@ -21,3 +21,9 @@ As I assume you probably use the same keys for every characters these sections a
 Now that your .ini file is set up run the script: ```python Darktide_CombatStim.py YOUR_CONFIG```, where the last part is to be replaced with the profile you want to run. The provided .ini file would be run as ```python Darktide_CombatStim.py zealot``` for example.
 
 The special controls allow you to modify the script's behavior. The chat key will pause the script (so you can actually type without being interrupted by unintended keystrokes) and the terminate key will stop the script. The prefix entry is added before any directional input. Darktide recognizes dash+directional input as a directed dash. The script works similarly.
+
+### Demonstration
+
+I first use the regular dash for a demonstration, then enable the script. The script adds crouch inputs at the beginning and end of the dash, reducing your hitbox size and making it easier to leverage cover.
+
+[![CombatStim demo](https://img.youtube.com/vi/L91rHNg-6Mk/0.jpg)](https://www.youtube.com/watch?v=L91rHNg-6Mk)
