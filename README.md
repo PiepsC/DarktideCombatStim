@@ -14,7 +14,7 @@ The script is set-up in a fairly generic way, allowing people to expand upon it 
 
 ### How to use
 
-All the script does is emulate key presses. In order to make use of it you need to instruct the script what keys you want to map. Navigate to the 'combatstim.ini' file and adjust it according to your desires.
+All the script does is emulate key presses. In order to make use of it you need to instruct the script what keys you want to map. Navigate to the 'combatstim.ini' file and adjust it according to your desires. Note that 'dodgemask' is the actual key you press, and 'dodge' is the key you would use to dodge in-game. Since these conflict you will need to rebind the dodge key in Darktide itself. For most users this will be the spacebar. It is expected to be bound to 'p' in the ini file, while still being effectively activated with spacebar when the script is run.
 
 As I assume you probably use the same keys for every characters these sections are application wide. However, you can adjust the "length" of the dash per setup. Simply add a new section with any desired name (similar to the '[zealot]' example already present) and specify the duration of the dash. Note that if the dash falls below a certain treshold the game will not register the inputs properly.
 
