@@ -1,4 +1,5 @@
 from pynput import keyboard, mouse
+from pynput.keyboard import Key, KeyCode, _NORMAL_MODIFIERS
 from threading import Thread, Event, Lock, current_thread
 from inspect import signature
 from typing import Callable
@@ -37,11 +38,10 @@ class SequenceLock(object):
 		self._active = True
 
 	def acquire(self) -> bool:
-		self.lock.acquire()
 		if(not self.open):
-			self.lock.release()
 			return False
 		else:
+			self.lock.acquire()
 			self.open = False
 			self.lock.release()
 			return True
@@ -85,13 +85,15 @@ controller_m = mouse.Controller()
 mutex = SequenceLock()
 
 # Helper
-def TryPress(key, release=True) -> None:
+def TryPress(key, release=True, press=True) -> None:
 	if(type(key) is str or isinstance(key, keyboard.Key)):
-		controller_k.press(key)
+		if(press):
+			controller_k.press(key)
 		if(release):
 			controller_k.release(key)
 	else:
-		controller_m.press(key)
+		if(press):
+			controller_m.press(key)
 		if(release):
 			controller_m.release(key)
 
@@ -100,16 +102,26 @@ def EmulateKeyRepeated(key : keyboard.Key | mouse.Button, delay: float, count : 
 		TryPress(key)
 		event.wait(timeout=delay)
 
+# This obviously causes the thread to deadlock
+def EmulateKeyForever(key : keyboard.Key | mouse.Button) -> None:
+	while(1):
+		TryPress(key)
+
 def EmulateKeyOnce(key: keyboard.Key | mouse.Button) -> None:
 	TryPress(key)
 
 def EmulateKeyOncePress(key: keyboard.Key | mouse.Button) -> None:
-	TryPress(key, False)
+	TryPress(key, release=False)
+
+def EmulateKeyOnceRelease(key: keyboard.Key | mouse.Button) -> None:
+	TryPress(key, release=True, press=False)
 
 _ACTIONS = {
 	2 : EmulateKeyOnce,
 	3 : EmulateKeyRepeated,
-	4 : EmulateKeyOncePress
+	4 : EmulateKeyOncePress,
+	5 : EmulateKeyOnceRelease,
+	6 : EmulateKeyForever
 }
 _PARAMS = [0,0] + [len(signature(p).parameters) for p in _ACTIONS.values()]
 # -----
@@ -131,7 +143,7 @@ def KeySequence(inputs : list, event : Event, lock : SequenceLock, args=[]) -> N
 			_ACTIONS[i](*args[c:c+_PARAMS[i]])
 			c += _PARAMS[i]
 
-def KeySequenceHotkeyTrigger(keystroke : str, inputs : list, lock : SequenceLock, args=[]) -> None:
+def KeySequenceHotkeyTrigger(keystroke : (str | keyboard.Key), inputs : list, lock : SequenceLock, args=[]) -> None:
 	event = Event()
 	event.clear()
 	def Check() -> None:
@@ -144,7 +156,7 @@ def KeySequenceHotkeyTrigger(keystroke : str, inputs : list, lock : SequenceLock
 		return lambda k: f(k) if isinstance(k, keyboard.Key) else f(poller.canonical(k))
 
 	hotkey = keyboard.HotKey(
-		keyboard.HotKey.parse(keystroke),
+		keyboard.HotKey.parse(keystroke) if not isinstance(keystroke, keyboard.Key) else [keystroke],
 		Check
 	)
 	poller = keyboard.Listener(
@@ -155,9 +167,16 @@ def KeySequenceHotkeyTrigger(keystroke : str, inputs : list, lock : SequenceLock
 	poller.run()
 	print("Listener thread terminated")
 
-def ControlThread(pause : str, stop : str, lock : SequenceLock) -> None:
+def ControlThread(pause : list[str], stop : list[str], lock : SequenceLock) -> None:
+	def ProcessKeys(keys: list[str], func : Callable) -> list:
+		def Normalize(i, f):
+			return lambda k: f(k) if isinstance(k, keyboard.Key) else f(listeners[i].canonical(k))
+		listeners = [keyboard.Listener(on_press=Normalize(i, hkey.press), on_release=Normalize(i, hkey.release)) for i, hkey in enumerate([keyboard.HotKey(keyboard.HotKey.parse(key), func) for key in keys])]
+		return listeners
+
 	event = Event()
 	event.clear()
+
 	def TogglePause():
 		print("Pausing" if not lock.pause else "Resuming")
 		lock.cident = current_thread().ident # Assume control over lock
@@ -169,51 +188,40 @@ def ControlThread(pause : str, stop : str, lock : SequenceLock) -> None:
 		lock.terminate()
 		event.set()
 
-	def Normalize(f) -> Callable:
-		return lambda k: f(k) if isinstance(k, keyboard.Key) else f(poller.canonical(k))
-
-	pauseKey = keyboard.HotKey(
-		keyboard.HotKey.parse(pause),
-		TogglePause
-	)
-	stopKey = keyboard.HotKey(
-		keyboard.HotKey.parse(stop),
-		Terminate
-	)
-
-	poller = keyboard.Listener(
-		on_press=Normalize(pauseKey.press),
-		on_release=Normalize(pauseKey.release)
-	)
-	poller2 = keyboard.Listener(
-		on_press=Normalize(stopKey.press),
-		on_release=Normalize(stopKey.release)
-	)
-
-	poller.start()
-	poller2.start()
+	pausekeys = ProcessKeys(pause, TogglePause)
+	stopkeys = ProcessKeys(stop, Terminate)
+	for poller in pausekeys:
+		poller.start()
+	for poller in stopkeys:
+		poller.start()
 	event.wait()
 	print("Terminated control thread")
-	poller.stop()
-	poller2.stop()
+	for poller in pausekeys:
+		poller.stop()
+	for poller in stopkeys:
+		poller.stop()
 
 # -----
 
-def SpawnListeners(delay=0, terminate='', chat='', crouch='', dodge='', dodgemask='', prefix='',
-		   left='', back='', right='') -> None:
+def SpawnListeners(delay=0, vaultdelay=0, terminate='', chat='', crouch='', dodge='', dodgemask='', prefix='',
+		   left='', back='', right='', vault='', vaultmask='') -> None:
 	
 	print("Started Darktide CombatStim!")
 	ct = Thread(target=ControlThread, args=[chat, terminate, mutex])
-	t1 = Thread(target=KeySequenceHotkeyTrigger, args=[f"{prefix}{left}", [2, 2, 2, 0, 2, 1], mutex, [dodgemask, crouch, dodge, delay, crouch]])
-	t2 = Thread(target=KeySequenceHotkeyTrigger, args=[f"{prefix}{right}", [2, 2, 2, 0, 2, 1], mutex, [dodgemask, crouch, dodge, delay, crouch]])
-	t3 = Thread(target=KeySequenceHotkeyTrigger, args=[f"{prefix}{back}", [2, 2, 2, 0, 2, 1], mutex, [dodgemask, crouch, dodge, delay, crouch]])
+
+	# Any new input sequence that relies on a key being pressed needs to start with instruction sequence 5 (release key)
+	t1 = Thread(target=KeySequenceHotkeyTrigger, args=[f"{prefix}{left}", [5, 2, 2, 0, 2, 1], mutex, [dodgemask, crouch, dodge, delay, crouch]])
+	t2 = Thread(target=KeySequenceHotkeyTrigger, args=[f"{prefix}{right}", [5, 2, 2, 0, 2, 1], mutex, [dodgemask, crouch, dodge, delay, crouch]])
+	t3 = Thread(target=KeySequenceHotkeyTrigger, args=[f"{prefix}{back}", [5, 2, 2, 0, 2, 1], mutex, [dodgemask, crouch, dodge, delay, crouch]])
+	t4 = Thread(target=KeySequenceHotkeyTrigger, args=[vaultmask, [5, 2, 0, 2, 4, 2, 0, 2, 5, 0, 1], mutex, [vaultmask, vault, vaultdelay, crouch, right, dodge, vaultdelay * 0.5, crouch, right, vaultdelay]])
 	
 	ct.start()
 	t1.start()
 	t2.start()
 	t3.start()
+	t4.start()
 
-# Parser for individual keys. Reduces it to a single value
+# Parser for individual keys. Reduces it to a single value for single press events
 def parse(key):
 	val = keyboard.HotKey.parse(key)[0]
 	return val.char if isinstance(val, keyboard.KeyCode) else val
@@ -230,12 +238,13 @@ if __name__ == "__main__":
 	config = configparser.ConfigParser()
 	config.read(args.filename)
 	delay = float(config[args.classname]['delay'])
+	vaultdelay = float(config['controls.special']['vaultdelay'])
 	prefix = config['controls.special']['prefix']
-	terminate = config['controls.special']['terminate']
-	chat = config['controls.special']['chat']
+	terminate = config['controls.special']['terminate'].split(',')
+	chat = config['controls.special']['chat'].split(',')
 	keysec = config['controls.keys']
 	keys = {}
 	for i in keysec.keys():
 		keys[i] = parse(keysec[i])
 
-	SpawnListeners(prefix=prefix, delay=delay, terminate=terminate, chat=chat, **keys)
+	SpawnListeners(prefix=prefix, delay=delay, vaultdelay=vaultdelay, terminate=terminate, chat=chat, **keys)
