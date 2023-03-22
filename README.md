@@ -26,4 +26,4 @@ The special controls allow you to modify the script's behavior. The chat key wil
 
 I first use the regular dash for a demonstration, then enable the script. The script adds crouch inputs at the beginning and end of the dash, reducing your hitbox size and making it easier to leverage cover.
 
-[![CombatStim demo](https://img.youtube.com/vi/L91rHNg-6Mk/0.jpg)](https://www.youtube.com/watch?v=L91rHNg-6Mk)
+[![CombatStim demo](https://img.youtube.com/vi/L91rHNg-6Mk/0.jpg)](https://www.youtube.com/watch?v=YsjZ9gZ2gg8)
